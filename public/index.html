@@ -1,0 +1,27 @@
+<!doctype html><html lang="ja"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Fortnite Observer Switcher</title><link rel="stylesheet" href="/style.css"></head><body>
+<div class="app">
+  <header><h1>Fortnite Observer Switcher</h1><div id="obsStatus" class="obs-status offline"><span class="status-dot"></span><span class="status-text">OFFLINE</span></div></header>
+  <main>
+    <div id="screens" class="screen-grid"></div>
+    <section class="preview-area">
+      <h2>Preview</h2>
+      <div id="preview" class="preview"><span>画面をクリックしてください</span></div>
+      <div id="selectedText" class="selected-text">未選択</div>
+      <button id="execute" class="execute" disabled>投映</button>
+    </section>
+  </main>
+  <button id="settingsButton" class="settings-button" title="設定">⚙</button>
+</div>
+<div id="settingsModal" class="modal-backdrop"><div class="modal"><button id="closeSettings" class="close">×</button><h2>設定</h2><p class="muted">「画面共有1」などの番号を、共有するPCごとに対応させて使用してください。</p><div id="connectionList"></div><div class="obs-info"><b>OBSへの接続方法</b>
+<ol>
+<li>OBSを起動します。</li>
+<li>「ソース」→「ブラウザ」を追加します。</li>
+<li>URLに下のアドレスを入力します。</li>
+<li>幅を <b>1920</b>、高さを <b>1080</b> にします。</li>
+<li>OBS側が接続すると、この画面の右上が <b>🟢 ONLINE</b> になります。</li>
+<li>このサイトで画面を選び「投映」を押すと、OBSのブラウザソースに映像が出ます。通常クリックで1画面を選択します。2画面にするときだけ、設定した2画面追加キー（初期Ctrl）を押しながら2枚目をクリックします。設定した即時投映キー＋クリックなら投映ボタンをスキップして1画面で即時投映できます。</li>
+</ol>
+<div id="obsUrl" class="url"></div>
+<p class="muted">※ OBSとこのサイトが同じPCなら <code>localhost</code> のURLをそのまま使えます。</p>
+</div></div></div>
+<script src="/socket.io/socket.io.js"></script><script src="/controller.js?v=74"></script></body></html>
