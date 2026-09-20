@@ -27,6 +27,7 @@ app.get('/api/dual-background',(_,r)=>{
 app.get('/',(_,r)=>r.sendFile(path.join(__dirname,'public/index.html')));
 app.get('/share',(_,r)=>r.sendFile(path.join(__dirname,'public/share.html')));
 app.get('/obs',(_,r)=>r.sendFile(path.join(__dirname,'public/obs.html')));
+app.get('/obs-public',(_,r)=>{r.set('Cache-Control','no-store');r.sendFile(path.join(__dirname,'public/obs.html'));});
 function status(){return Array.from({length:SCREEN_COUNT},(_,i)=>i+1).map(id=>({screenId:String(id),connected:screens.has(String(id))}));}
 function broadcastStatus(){io.emit('screen-status',status());}
 function removeViewer(socket,id){watchers.get(id)?.delete(socket.id); socket.data.watchIds?.delete(id);}

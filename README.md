@@ -1,105 +1,51 @@
-# Fortnite Observer Switcher
+# Fortnite Observer Switcher V76
 
-Fortnite Observer Switcher is a Node.js + Express + Socket.IO web application for switching and projecting up to 8 shared screens to an OBS Browser Source.
+8画面対応のWebRTCベースOBSスイッチャーです。
 
-## Features
+## V76の主な変更
 
-- Up to 8 screen-sharing clients
-- Screen thumbnails and preview
-- Single-screen selection
-- Two-screen selection with the Ctrl key
-- Shift + screen key for immediate single-screen projection
-- Enter key for projection
-- Configurable keyboard shortcuts
-- R key for clearing the projection and making Preview black
-- OBS Browser Source output
-- WebRTC screen sharing
-- Socket.IO signaling
+- 共有画面がWebRTC上で「接続済みなのに映像が止まる/黒くなる」ケース向けのデコーダー監視を追加。
+- Controller Preview / OBSの両方で、映像フレームが一定時間止まった場合だけ自動再接続。
+- 再接続時にOBS側の現在の映像要素を即座に黒画面へ戻さず、復旧後に新しい接続を表示するよう改善。
+- 画面共有側の映像設定を1080p/60FPS優先にし、ゲーム画面向けに`contentHint=motion`を使用。
+- WebRTC送信設定を高画質寄りに調整。
+- `/obs-public`を追加。Basic認証を外側のプロキシで除外できる構成に対応。
+- Enter = 投映、R = 投映解除＋Preview黒画面、1～8 = 画面選択、Ctrl = 2画面追加、Shift = 1画面即時投映。
+- Ctrl+Shiftでは2画面即時投映を行いません。
 
-## Project structure
+## Railway + Basic認証での推奨構成
 
-```text
-fortnite-observer-switcher/
-├─ public/
-│  ├─ index.html
-│  ├─ controller.js
-│  ├─ share.html
-│  ├─ share.js
-│  ├─ obs.html
-│  └─ obs.js
-├─ server.js
-├─ package.json
-├─ package-lock.json
-├─ .gitignore
-└─ README.md
-```
+通常操作:
 
-## Requirements
+`https://switcher.example.com/`
 
-- Node.js 18+ recommended
-- npm
-- A browser supporting WebRTC / `getDisplayMedia()`
-- HTTPS is required for screen sharing on normal remote domains. `localhost` can be used for local development.
+→ Basic認証
 
-## Installation
+OBS専用:
 
-Clone the repository:
+`https://obs.example.com/obs-public`
 
-```bash
-git clone https://github.com/YOUR-USERNAME/fortnite-observer-switcher.git
-cd fortnite-observer-switcher
-```
+→ Basic認証なし
 
-Install dependencies:
+OBS専用ドメインをスイッチャーサービスへ直接割り当てる場合、`/`も公開される可能性があります。必要ならBasic認証サービスをリバースプロキシとして使い、OBS用パスだけ認証を除外してください。
+
+## 起動
 
 ```bash
 npm install
-```
-
-Start the server:
-
-```bash
 npm start
 ```
 
-Then open the address shown by the server.
+## OBS
 
-## OBS setup
-
-Open the OBS Browser Source and use the OBS page provided by this application.
-
-Example:
+Browser Sourceに以下を設定します。
 
 ```text
-https://YOUR-DOMAIN/obs.html
+https://YOUR-DOMAIN/obs-public
 ```
 
-Use the actual URL and port of your deployment.
+Basic認証をOBS URLにかける場合、OBS Browser Sourceが認証画面で止まることがあるため、OBS用URLは認証対象から外してください。
 
-## Keyboard controls
+## 注意
 
-Default controls:
-
-| Key | Action |
-|---|---|
-| `1` - `8` | Select screen 1 - 8 |
-| `Ctrl` + screen key | Add a second screen |
-| `Shift` + screen key | Immediately project that single screen |
-| `Enter` | Project the current selection |
-| `R` | Clear projection / make Preview black |
-
-`Ctrl + Shift` does not perform a two-screen instant projection.
-
-Keyboard bindings can be changed from the settings panel.
-
-## Deployment
-
-This repository contains the application source code. It can be deployed to a Node.js-compatible rental server or VPS.
-
-For remote screen sharing, configure the deployment with HTTPS.
-
-Do not commit private API keys, passwords, certificates, or `.env` files to GitHub.
-
-## License
-
-No license is currently specified for this project.
+このアプリは映像をサーバーでエンコードするのではなく、画面共有PCからController/OBSへWebRTCで直接送信します。ネットワーク環境によってはSTUNだけで接続できない場合があり、その場合はTURNサーバーが必要です。

@@ -4,6 +4,7 @@ const videos=Array.from({length:SCREEN_COUNT},(_,i)=>{
  const v=document.createElement('video');
  v.autoplay=true;v.muted=true;v.playsInline=true;v.preload='auto';v.dataset.screen=String(i+1);
  v.style.cssText='position:absolute;display:block;opacity:0;object-fit:contain;background:#000;pointer-events:none;will-change:opacity,transform;transition:opacity 120ms linear;';
+ v.setAttribute('disablePictureInPicture','');
  document.getElementById('stage').appendChild(v); return v;
 });
 const stage=document.getElementById('stage');
@@ -54,7 +55,7 @@ function startViewer(id){
  if(!online[id]||viewers[id])return;
  const viewerId=`obs-${socket.id}-${id}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
  const pc=new RTCPeerConnection(rtcConfig);
- const state={id,viewerId,pc,source:null,remoteCandidates:[],localCandidates:[],stream:new MediaStream(),retry:null,disconnectTimer:null};
+ const state={id,viewerId,pc,source:null,remoteCandidates:[],localCandidates:[],stream:new MediaStream(),retry:null,disconnectTimer:null,blackTimer:null,lastDecodedFrames:0,lastStatsAt:0};
  viewers[id]=state;
  const v=videos[id-1];v.srcObject=state.stream;v.style.opacity='0';
  pc.addTransceiver('video',{direction:'recvonly'});
@@ -80,16 +81,32 @@ function startViewer(id){
   }
  };
  pc.oniceconnectionstatechange=()=>{if(viewers[id]!==state)return;if(['failed','closed'].includes(pc.iceConnectionState))restart(id);};
+ // Chromium/OBS CEF can occasionally keep a WebRTC connection in 'connected' while
+ // the decoder stops producing frames. Restart after a sustained zero-frame stall.
+ state.blackTimer=setInterval(async()=>{
+  if(viewers[id]!==state){clearInterval(state.blackTimer);state.blackTimer=null;return;}
+  if(pc.connectionState!=='connected'||!online[id])return;
+  try{
+   const stats=await pc.getStats();
+   let decoded=null,packets=0;
+   stats.forEach(r=>{if(r.type==='inbound-rtp'&&r.kind==='video'){if(typeof r.framesDecoded==='number')decoded=r.framesDecoded;packets=r.packetsReceived||0;}});
+   const now=Date.now();
+   if(typeof decoded==='number'){
+    if(state.lastStatsAt&&decoded<=state.lastDecodedFrames&&now-state.lastStatsAt>3500&&packets===0)restart(id);
+    state.lastDecodedFrames=decoded;state.lastStatsAt=now;
+   }
+  }catch(_){}
+ },2000);
  socket.emit('watch-screen',{screenId:String(id),viewerId});
 }
 function restart(id){
  const state=viewers[id];if(!state||state.retry||!online[id])return;
  if(state.disconnectTimer){clearTimeout(state.disconnectTimer);state.disconnectTimer=null;}
- state.retry=setTimeout(()=>{if(viewers[id]!==state)return;try{state.pc.close()}catch(_){}videos[id-1].srcObject=null;delete viewers[id];startViewer(id);},700);
+ state.retry=setTimeout(()=>{if(viewers[id]!==state)return;try{state.pc.close()}catch(_){}delete viewers[id];startViewer(id);},700);
 }
 function stopViewer(id){
  const s=viewers[id];if(!s)return;
- try{s.pc.close()}catch(_){}if(s.retry)clearTimeout(s.retry);if(s.disconnectTimer)clearTimeout(s.disconnectTimer);
+ try{s.pc.close()}catch(_){}if(s.retry)clearTimeout(s.retry);if(s.disconnectTimer)clearTimeout(s.disconnectTimer);if(s.blackTimer)clearInterval(s.blackTimer);
  const v=videos[id-1];v.pause();v.srcObject=null;v.style.opacity='0';delete viewers[id];
 }
 function wake(id){const v=videos[id-1];v.play().catch(()=>{});if(activeIds().includes(id))revealWhenReady(id);}

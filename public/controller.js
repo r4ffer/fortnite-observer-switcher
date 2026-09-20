@@ -31,7 +31,7 @@ for(let i=1;i<=SCREEN_COUNT;i++){
  const card=document.createElement('div');card.className='screen-card';
  card.innerHTML=`<div class="thumb"><video id="thumb-${i}" autoplay muted playsinline></video><div id="offline-${i}" class="offline-card">未接続</div></div><div class="card-name">画面${i}</div>`;
  screensEl.appendChild(card);
- players[i]={id:String(i),card,video:card.querySelector('video'),pc:null,viewerId:null,source:null,remoteCandidates:[],localCandidates:[],stream:null,retryTimer:null,disconnectTimer:null,generation:0};
+ players[i]={id:String(i),card,video:card.querySelector('video'),pc:null,viewerId:null,source:null,remoteCandidates:[],localCandidates:[],stream:null,retryTimer:null,disconnectTimer:null,blackTimer:null,lastDecodedFrames:0,lastStatsAt:0,generation:0};
  card.onclick=(event)=>onScreenClick(String(i),event);
 }
 
@@ -58,6 +58,7 @@ function stopViewer(id){
  const p=players[id]; if(!p)return;
  if(p.retryTimer){clearTimeout(p.retryTimer);p.retryTimer=null;}
  if(p.disconnectTimer){clearTimeout(p.disconnectTimer);p.disconnectTimer=null;}
+ if(p.blackTimer){clearInterval(p.blackTimer);p.blackTimer=null;}
  p.generation++;
  try{p.pc?.close()}catch(_){}
  p.pc=null;p.viewerId=null;p.source=null;p.remoteCandidates=[];p.localCandidates=[];p.stream=null;
@@ -117,6 +118,29 @@ function startViewer(id){
   if(p.pc!==pc)return;
   if(['failed','closed'].includes(pc.iceConnectionState)){try{pc.close()}catch(_){}p.pc=null;if(online[id])scheduleRestart(id,500);}
  };
+ // Decoder watchdog: some Chromium/CEF states can report a connected WebRTC peer while
+ // delivering zero decoded frames. Restart only after a sustained stall so normal startup
+ // and brief network jitter do not cause black flashes.
+ p.blackTimer=setInterval(async()=>{
+  if(p.pc!==pc){clearInterval(p.blackTimer);p.blackTimer=null;return;}
+  if(pc.connectionState!=='connected'||!online[id])return;
+  try{
+   const stats=await pc.getStats();
+   let decoded=null,packets=0;
+   stats.forEach(r=>{
+    if(r.type==='inbound-rtp'&&r.kind==='video'){if(typeof r.framesDecoded==='number')decoded=r.framesDecoded;packets=r.packetsReceived||0;}
+   });
+   const now=Date.now();
+   if(typeof decoded==='number'){
+    if(p.lastStatsAt&&decoded<=p.lastDecodedFrames&&now-p.lastStatsAt>3500&&packets===0){
+     try{pc.close()}catch(_){}
+     if(p.pc===pc){p.pc=null;p.source=null;}
+     scheduleRestart(id,250);
+    }
+    p.lastDecodedFrames=decoded;p.lastStatsAt=now;
+   }
+  }catch(_){}
+ },2000);
  socket.emit('watch-screen',{screenId:id,viewerId});
 }
 
@@ -218,7 +242,7 @@ function renderSinglePreview(id){
  const p=players[id];
  if(!p?.stream||!p.stream.getVideoTracks().some(t=>t.readyState==='live')){selectedText.textContent='接続中';execute.disabled=true;return;}
  let v=document.getElementById('preview-video');
- if(!v){v=document.createElement('video');v.id='preview-video';v.autoplay=true;v.muted=true;v.playsInline=true;v.style.cssText='position:absolute;inset:0;width:100%;height:100%;object-fit:cover;background:#050505;';holder.appendChild(v);}
+ if(!v){v=document.createElement('video');v.id='preview-video';v.autoplay=true;v.muted=true;v.playsInline=true;v.style.cssText='position:absolute;inset:0;width:100%;height:100%;object-fit:contain;background:#050505;display:block;opacity:1;';holder.appendChild(v);}
  if(v.srcObject!==p.stream)v.srcObject=p.stream; // hard cut, no fade
  v.play().catch(()=>{});
  selectedText.textContent='選択中';execute.disabled=false;
@@ -286,6 +310,8 @@ document.addEventListener('keydown',event=>{
  const id=String(idx+1);
  if(!online[id])return;
  event.preventDefault();
+ // Ctrl+Shift is intentionally a no-op: it must never instantly project two screens.
+ if(event.ctrlKey && event.shiftKey)return;
  const dual=event.ctrlKey;
  const instant=event.shiftKey;
  selectScreen(id,{dual,instant});
