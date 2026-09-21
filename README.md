@@ -1,8 +1,8 @@
-# Fortnite Observer Switcher V76
+# Fortnite Observer Switcher V77
 
 8画面対応のWebRTCベースOBSスイッチャーです。
 
-## V76の主な変更
+## V77の主な変更
 
 - 共有画面がWebRTC上で「接続済みなのに映像が止まる/黒くなる」ケース向けのデコーダー監視を追加。
 - Controller Preview / OBSの両方で、映像フレームが一定時間止まった場合だけ自動再接続。

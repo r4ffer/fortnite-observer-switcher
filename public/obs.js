@@ -4,6 +4,7 @@ const videos=Array.from({length:SCREEN_COUNT},(_,i)=>{
  const v=document.createElement('video');
  v.autoplay=true;v.muted=true;v.playsInline=true;v.preload='auto';v.dataset.screen=String(i+1);
  v.style.cssText='position:absolute;display:block;opacity:0;object-fit:contain;background:#000;pointer-events:none;will-change:opacity,transform;transition:opacity 120ms linear;';
+ v.onplaying=()=>{v.style.opacity='1';v.style.visibility='visible';};
  v.setAttribute('disablePictureInPicture','');
  document.getElementById('stage').appendChild(v); return v;
 });
@@ -20,7 +21,7 @@ fetch('/api/dual-background').then(r=>r.json()).then(({file})=>{
 }).catch(()=>{});
 
 function activeIds(){if(!layout)return[];return layout.mode==='dual'?[layout.left,layout.right]:[layout.id];}
-function setHidden(v){v.style.opacity='0';v.style.left='0';v.style.top='0';v.style.width='100%';v.style.height='100%';v.style.zIndex='0';}
+function setHidden(v){v.style.opacity='0';v.style.visibility='hidden';v.style.left='0';v.style.top='0';v.style.width='100%';v.style.height='100%';v.style.zIndex='0';}
 function setSingle(v){v.style.left='0';v.style.top='0';v.style.width='100%';v.style.height='100%';v.style.objectFit='contain';v.style.zIndex='2';}
 function setDual(v,left){v.style.top='0';v.style.width='50%';v.style.height='100%';v.style.objectFit='contain';v.style.left=left?'0':'50%';v.style.zIndex='2';}
 function applyLayout(next){
@@ -40,15 +41,33 @@ function clearLayout(){layout=null;videos.forEach(v=>{setHidden(v);v.dataset.wan
 function hasLiveTrack(id){return !!viewers[id]?.stream?.getVideoTracks().some(t=>t.readyState==='live');}
 function revealWhenReady(id){
  const v=videos[id-1];if(!v||!activeIds().includes(id))return;
- let tries=0;
+ // OBS Browser Source / CEF can receive a live WebRTC track before video.readyState
+ // reaches HAVE_CURRENT_DATA. Do not keep the video hidden waiting for readyState.
  const reveal=()=>{
-  if(!activeIds().includes(id)){return false;}
-  const live=hasLiveTrack(id);
-  if(live && v.readyState>=2){v.dataset.wantVisible='1';v.style.opacity='1';v.play().catch(()=>{});return true;}
-  v.play().catch(()=>{});return false;
+  if(viewers[id] && activeIds().includes(id)){
+   v.dataset.wantVisible='1';
+   v.style.opacity='1';
+   v.style.visibility='visible';
+   v.play().catch(()=>{});
+   return true;
+  }
+  return false;
  };
- if(reveal())return;
- const timer=setInterval(()=>{tries++;if(reveal()||tries>150||!activeIds().includes(id))clearInterval(timer);},100);
+ if(reveal()){
+  if(typeof v.requestVideoFrameCallback==='function'){
+   try{v.requestVideoFrameCallback(()=>reveal());}catch(_){}
+  }
+ }
+}
+function forceReveal(id){
+ const v=videos[id-1];if(!v)return;
+ v.dataset.wantVisible='1';
+ v.style.opacity='1';
+ v.style.visibility='visible';
+ v.play().catch(()=>{});
+ if(typeof v.requestVideoFrameCallback==='function'){
+  try{v.requestVideoFrameCallback(()=>{v.style.opacity='1';});}catch(_){}
+ }
 }
 
 function startViewer(id){
@@ -62,18 +81,18 @@ function startViewer(id){
  pc.ontrack=e=>{
   if(viewers[id]!==state||e.track.kind!=='video')return;
   if(!state.stream.getVideoTracks().some(t=>t.id===e.track.id))state.stream.addTrack(e.track);
-  e.track.onunmute=()=>{v.play().catch(()=>{});if(activeIds().includes(id))revealWhenReady(id);};
+  e.track.onunmute=()=>{forceReveal(id);};
   e.track.onended=()=>{if(viewers[id]===state&&online[id])restart(id);};
-  v.play().catch(()=>{});if(activeIds().includes(id))revealWhenReady(id);
+  forceReveal(id);
  };
- v.onloadedmetadata=()=>{if(activeIds().includes(id))revealWhenReady(id);};
- v.oncanplay=()=>{if(activeIds().includes(id))revealWhenReady(id);};
+ v.onloadedmetadata=()=>{if(activeIds().includes(id))forceReveal(id);};
+ v.oncanplay=()=>{if(activeIds().includes(id))forceReveal(id);};
  pc.onicecandidate=e=>{if(!e.candidate)return;if(state.source)socket.emit('webrtc-ice',{to:state.source,candidate:e.candidate,screenId:String(id),viewerId});else state.localCandidates.push(e.candidate);};
  pc.onconnectionstatechange=()=>{
   if(viewers[id]!==state)return;
   if(pc.connectionState==='connected'){
    if(state.disconnectTimer){clearTimeout(state.disconnectTimer);state.disconnectTimer=null;}
-   v.play().catch(()=>{});if(activeIds().includes(id))revealWhenReady(id);
+   forceReveal(id);
   }else if(pc.connectionState==='disconnected'){
    if(!state.disconnectTimer)state.disconnectTimer=setTimeout(()=>{state.disconnectTimer=null;if(viewers[id]===state&&pc.connectionState!=='connected')restart(id);},5000);
   }else if(['failed','closed'].includes(pc.connectionState)){
@@ -109,7 +128,7 @@ function stopViewer(id){
  try{s.pc.close()}catch(_){}if(s.retry)clearTimeout(s.retry);if(s.disconnectTimer)clearTimeout(s.disconnectTimer);if(s.blackTimer)clearInterval(s.blackTimer);
  const v=videos[id-1];v.pause();v.srcObject=null;v.style.opacity='0';delete viewers[id];
 }
-function wake(id){const v=videos[id-1];v.play().catch(()=>{});if(activeIds().includes(id))revealWhenReady(id);}
+function wake(id){const v=videos[id-1];forceReveal(id);}
 
 socket.on('connect',()=>{for(let i=1;i<=SCREEN_COUNT;i++)stopViewer(i);socket.emit('register-obs');});
 socket.on('screen-status',list=>{for(const item of list){const id=Number(item.screenId);online[id]=!!item.connected;if(item.connected&&!viewers[id])startViewer(id);if(!item.connected&&viewers[id])stopViewer(id);}});
@@ -136,7 +155,7 @@ setInterval(()=>{
   const v=videos[id-1];
   if(hasLiveTrack(id)){
    if(v.paused)v.play().catch(()=>{});
-   if(v.readyState>=2&&v.style.opacity!=='1')v.style.opacity='1';
+   if(v.style.opacity!=='1')forceReveal(id);
   }
  }
 },1000);
