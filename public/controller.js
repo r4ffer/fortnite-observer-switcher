@@ -77,14 +77,17 @@ function startViewer(id){
  const generation=++p.generation;
  const viewerId=`controller-${socket.id}-${id}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
  const pc=new RTCPeerConnection(rtcConfig);
- p.pc=pc;p.viewerId=viewerId;p.source=null;p.remoteCandidates=[];p.localCandidates=[];p.stream=new MediaStream();
- p.video.srcObject=p.stream;
+ p.pc=pc;p.viewerId=viewerId;p.source=null;p.remoteCandidates=[];p.localCandidates=[];p.stream=null;
+ p.video.srcObject=null;
  pc.addTransceiver('video',{direction:'recvonly'});
  pc.ontrack=e=>{
   if(p.pc!==pc||p.generation!==generation)return;
   if(e.track.kind!=='video')return;
-  const old=p.stream.getVideoTracks();
-  if(!old.some(t=>t.id===e.track.id))p.stream.addTrack(e.track);
+  // Use the exact MediaStream delivered by WebRTC when available. Creating a new
+  // MediaStream and adding the track later can leave Chromium's decoder attached
+  // to a stale stream, which showed up as black thumbnails/Preview while OBS still worked.
+  p.stream=e.streams?.[0] || new MediaStream([e.track]);
+  p.video.srcObject=p.stream;
   e.track.onunmute=()=>wakeVideo(p);
   e.track.onended=()=>{ if(p.pc===pc && online[id]) scheduleRestart(id,700); };
   wakeVideo(p);
@@ -146,6 +149,7 @@ function startViewer(id){
 
 function wakeVideo(p){
  if(!p.video)return;
+ if(p.stream && p.video.srcObject!==p.stream)p.video.srcObject=p.stream;
  p.video.play().catch(()=>{});
  if(isActive(p.id))renderPreview();
 }
