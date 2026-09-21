@@ -19,7 +19,7 @@ function saveKeybinds(){localStorage.setItem('fos-keybinds',JSON.stringify(keybi
 function modifierPressed(event,name){return name==='Shift'?event.shiftKey:name==='Control'?event.ctrlKey:name==='Alt'?event.altKey:false;}
 function modifierLabel(name){return name==='Control'?'Ctrl':name==='Shift'?'Shift':name==='Alt'?'Alt':'なし';}
 
-// Optional background image for 2-screen (dual) preview - same file OBS looks for (back.png / back.jpeg / back.jpg,
+// Preview uses the exact MediaStream received from the selected shared screen.
 // any case, in public/). The server resolves the actual filename case-insensitively so this doesn't have to guess.
 let dualBgUrl=null;
 fetch('/api/dual-background').then(r=>r.json()).then(({file})=>{
@@ -391,4 +391,4 @@ bindDual.onclick=()=>captureModifier(bindDual,'dualModifier');
 bindExecute.onclick=captureExecute;
 bindClear.onclick=captureClear;
 updateBindButtons();
-obsUrl.textContent=`${location.origin}/obs.html`;render();
+obsUrl.textContent=`${location.origin}/obs-public`;render();

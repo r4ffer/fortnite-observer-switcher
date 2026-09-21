@@ -1,51 +1,34 @@
-# Fortnite Observer Switcher V78
+# Fortnite Observer Switcher V79
 
-8画面対応のWebRTCベースOBSスイッチャーです。
+画面共有された映像を画面番号1〜8に対応させ、クリックした画面をそのままPreviewで確認し、「投映」でOBSへ送るシンプル構成です。
 
-## V78の主な変更
-
-- OBSは全共有画面を常時受信せず、現在「投映」している画面だけをWebRTC受信する方式に変更。
-- これによりFortniteなど負荷の高い画面で、不要なWebRTCエンコード/デコードを大幅に減らす。
-- ControllerのサムネイルとPreviewは同じ受信MediaStreamを利用し、選択時に別の画面取得を行わない。
-- OBS側は投映解除すると全WebRTC受信を停止し、次の投映時に必要な画面だけ再接続。
-- WebRTC送信設定を高画質寄りに調整。
-- `/obs-public`を追加。Basic認証を外側のプロキシで除外できる構成に対応。
-- Enter = 投映、R = 投映解除＋Preview黒画面、1～8 = 画面選択、Ctrl = 2画面追加、Shift = 1画面即時投映。
-- Ctrl+Shiftでは2画面即時投映を行いません。
-
-## Railway + Basic認証での推奨構成
-
-通常操作:
-
-`https://switcher.example.com/`
-
-→ Basic認証
-
-OBS専用:
-
-`https://obs.example.com/obs-public`
-
-→ Basic認証なし
-
-OBS専用ドメインをスイッチャーサービスへ直接割り当てる場合、`/`も公開される可能性があります。必要ならBasic認証サービスをリバースプロキシとして使い、OBS用パスだけ認証を除外してください。
+## 構成
+- 画面共有PC → 対応する画面番号へWebRTCで送信
+- 画面番号をクリック → 同じ受信MediaStreamをPreviewに表示
+- 投映 → 選択した画面番号だけをOBSが受信
+- 投映していない画面はOBSへ接続しない
+- 2画面時のみ選択した2本をOBSへ接続
+- OBS URL: `/obs-public`
+- 認証機構や特定のホスティングサービスに依存しない
 
 ## 起動
-
 ```bash
 npm install
 npm start
 ```
 
 ## OBS
+Browser Sourceに `https://YOUR-DOMAIN/obs-public` を設定し、1920x1080にします。
 
-Browser Sourceに以下を設定します。
+## 画面共有
+共有するPCごとに `/share?id=1` 〜 `/share?id=8` を開き、対応する画面番号を指定します。
 
-```text
-https://YOUR-DOMAIN/obs-public
-```
+## キー
+- 1〜8: 画面選択
+- Ctrl + クリック/数字: 2画面選択
+- Enter: 投映
+- R: 投映解除
+- Shift + クリック/数字: 1画面即時投映
 
-Basic認証をOBS URLにかける場合、OBS Browser Sourceが認証画面で止まることがあるため、OBS用URLは認証対象から外してください。
-
-## 注意
-
-このアプリは映像をサーバーでエンコードするのではなく、画面共有PCからController/OBSへWebRTCで直接送信します。ネットワーク環境によってはSTUNだけで接続できない場合があり、その場合はTURNサーバーが必要です。
+## HTTPS
+`getDisplayMedia()` を利用するため、実際の画面共有はHTTPSまたはlocalhostで利用してください。
