@@ -1,13 +1,13 @@
-# Fortnite Observer Switcher V77
+# Fortnite Observer Switcher V78
 
 8画面対応のWebRTCベースOBSスイッチャーです。
 
-## V77の主な変更
+## V78の主な変更
 
-- 共有画面がWebRTC上で「接続済みなのに映像が止まる/黒くなる」ケース向けのデコーダー監視を追加。
-- Controller Preview / OBSの両方で、映像フレームが一定時間止まった場合だけ自動再接続。
-- 再接続時にOBS側の現在の映像要素を即座に黒画面へ戻さず、復旧後に新しい接続を表示するよう改善。
-- 画面共有側の映像設定を1080p/60FPS優先にし、ゲーム画面向けに`contentHint=motion`を使用。
+- OBSは全共有画面を常時受信せず、現在「投映」している画面だけをWebRTC受信する方式に変更。
+- これによりFortniteなど負荷の高い画面で、不要なWebRTCエンコード/デコードを大幅に減らす。
+- ControllerのサムネイルとPreviewは同じ受信MediaStreamを利用し、選択時に別の画面取得を行わない。
+- OBS側は投映解除すると全WebRTC受信を停止し、次の投映時に必要な画面だけ再接続。
 - WebRTC送信設定を高画質寄りに調整。
 - `/obs-public`を追加。Basic認証を外側のプロキシで除外できる構成に対応。
 - Enter = 投映、R = 投映解除＋Preview黒画面、1～8 = 画面選択、Ctrl = 2画面追加、Shift = 1画面即時投映。

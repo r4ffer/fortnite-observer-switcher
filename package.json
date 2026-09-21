@@ -1,1 +1,1 @@
-{"name":"fortnite-observer-switcher","version":"9.0.3","private":true,"scripts":{"start":"node server.js"},"dependencies":{"express":"^5.1.0","socket.io":"^4.8.1"}}
+{"name":"fortnite-observer-switcher","version":"9.0.4","private":true,"scripts":{"start":"node server.js"},"dependencies":{"express":"^5.1.0","socket.io":"^4.8.1"}}

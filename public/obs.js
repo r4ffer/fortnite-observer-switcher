@@ -36,7 +36,11 @@ function applyLayout(next){
   revealWhenReady(layout.left);revealWhenReady(layout.right);
  }
 }
-function clearLayout(){layout=null;videos.forEach(v=>{setHidden(v);v.dataset.wantVisible='0';});}
+function clearLayout(){
+ layout=null;
+ for(let id=1;id<=SCREEN_COUNT;id++)stopViewer(id);
+ videos.forEach(v=>{setHidden(v);v.dataset.wantVisible='0';});
+}
 
 function hasLiveTrack(id){return !!viewers[id]?.stream?.getVideoTracks().some(t=>t.readyState==='live');}
 function revealWhenReady(id){
@@ -131,21 +135,43 @@ function stopViewer(id){
 function wake(id){const v=videos[id-1];forceReveal(id);}
 
 socket.on('connect',()=>{for(let i=1;i<=SCREEN_COUNT;i++)stopViewer(i);socket.emit('register-obs');});
-socket.on('screen-status',list=>{for(const item of list){const id=Number(item.screenId);online[id]=!!item.connected;if(item.connected&&!viewers[id])startViewer(id);if(!item.connected&&viewers[id])stopViewer(id);}});
+socket.on('screen-status',list=>{
+ for(const item of list){
+  const id=Number(item.screenId);
+  online[id]=!!item.connected;
+  // Important: OBS no longer opens WebRTC connections to every shared screen.
+  // It only connects to the screen(s) currently being projected. This keeps Fortnite
+  // capture/encoding load much lower and avoids black frames caused by multiple
+  // simultaneous WebRTC decoders/encoders.
+  if(!item.connected&&viewers[id])stopViewer(id);
+ }
+ if(layout) syncViewersToLayout();
+});
 socket.on('watch-started',({screenId,source})=>{const id=Number(screenId),s=viewers[id];if(!s)return;s.source=source;for(const c of s.localCandidates.splice(0))socket.emit('webrtc-ice',{to:source,candidate:c,screenId:String(id),viewerId:s.viewerId});});
 socket.on('watch-failed',({screenId})=>{const id=Number(screenId);if(viewers[id])restart(id);});
 socket.on('webrtc-offer',async({from,offer,screenId,viewerId})=>{const id=Number(screenId),s=viewers[id];if(!s||s.viewerId!==String(viewerId))return;try{s.source=from;await s.pc.setRemoteDescription(offer);for(const c of s.remoteCandidates.splice(0))await s.pc.addIceCandidate(c).catch(()=>{});const answer=await s.pc.createAnswer();await s.pc.setLocalDescription(answer);socket.emit('webrtc-answer',{to:from,answer:s.pc.localDescription,screenId:String(id),viewerId:s.viewerId});for(const c of s.localCandidates.splice(0))socket.emit('webrtc-ice',{to:from,candidate:c,screenId:String(id),viewerId:s.viewerId});}catch(e){console.error('OBS offer',e);restart(id);}});
 socket.on('webrtc-ice',async({candidate,screenId,viewerId})=>{const id=Number(screenId),s=viewers[id];if(!s||s.viewerId!==String(viewerId)||!candidate)return;if(s.pc.remoteDescription)await s.pc.addIceCandidate(candidate).catch(()=>{});else s.remoteCandidates.push(candidate);});
+function syncViewersToLayout(){
+ const wanted=new Set(activeIds());
+ for(let id=1;id<=SCREEN_COUNT;id++){
+  if(wanted.has(id)){
+   if(online[id]&&!viewers[id])startViewer(id);
+  }else if(viewers[id]){
+   stopViewer(id);
+  }
+ }
+}
 socket.on('layout-clear',clearLayout);
 socket.on('layout-update',(payload={})=>{
  if(payload.mode==='dual'){
   const left=Number(payload.left),right=Number(payload.right);
   if(!Number.isInteger(left)||!Number.isInteger(right)||left<1||left>SCREEN_COUNT||right<1||right>SCREEN_COUNT||left===right)return;
   applyLayout({mode:'dual',left,right});
-  for(const id of [left,right])if(online[id]&&!viewers[id])startViewer(id);
+  syncViewersToLayout();
  }else{
   const id=Number(payload.screenId);if(!Number.isInteger(id)||id<1||id>SCREEN_COUNT)return;
-  applyLayout({mode:'single',id});if(online[id]&&!viewers[id])startViewer(id);
+  applyLayout({mode:'single',id});
+  syncViewersToLayout();
  }
 });
 
