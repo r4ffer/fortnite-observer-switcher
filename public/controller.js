@@ -18,9 +18,9 @@ fetch('/api/dual-background').then(r=>r.json()).then(({file})=>{dualBgUrl=file||
 
 for(let i=1;i<=SCREEN_COUNT;i++){
  const card=document.createElement('div');card.className='screen-card';
- card.innerHTML=`<div class="thumb"><img id="thumb-${i}" alt="画面${i}"/><video id="video-${i}" autoplay muted playsinline></video><div id="offline-${i}" class="offline-card">未接続</div></div><div class="card-name">画面${i}</div>`;
+ card.innerHTML=`<div class="thumb"><video id="video-${i}" autoplay muted playsinline></video><div id="offline-${i}" class="offline-card">未接続</div></div><div class="card-name">画面${i}</div>`;
  screensEl.appendChild(card);
- players[i]={id:String(i),card,img:card.querySelector('img'),video:card.querySelector('video'),pc:null,viewerId:null,source:null,remoteCandidates:[],localCandidates:[],stream:null,hasVideoFrame:false,retryTimer:null,disconnectTimer:null,generation:0};
+ players[i]={id:String(i),card,video:card.querySelector('video'),pc:null,viewerId:null,source:null,remoteCandidates:[],localCandidates:[],stream:null,hasVideoFrame:false,retryTimer:null,disconnectTimer:null,generation:0};
  card.onclick=e=>onScreenClick(String(i),e);
 }
 
@@ -33,7 +33,6 @@ function stopViewer(id){
  p.generation++;try{p.pc?.close()}catch(_){ }
  p.pc=null;p.viewerId=null;p.source=null;p.remoteCandidates=[];p.localCandidates=[];p.stream=null;p.hasVideoFrame=false;
  if(p.video){p.video.pause();p.video.srcObject=null;p.video.style.display='none';}
- if(!isActive(id))p.img.style.display='block';
 }
 function scheduleRestart(id,delay=500){
  const p=players[id];if(!p||!online[id]||p.retryTimer)return;
@@ -45,19 +44,22 @@ function startViewer(id){
  const viewerId=`controller-${socket.id}-${id}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
  const pc=new RTCPeerConnection(rtcConfig);
  p.pc=pc;p.viewerId=viewerId;p.source=null;p.remoteCandidates=[];p.localCandidates=[];p.stream=null;p.hasVideoFrame=false;
- p.img.style.display='none';p.video.style.display='block';p.video.srcObject=null;
+ p.video.style.display='block';p.video.srcObject=null;
  pc.addTransceiver('video',{direction:'recvonly'});
  pc.ontrack=e=>{
   if(p.pc!==pc||p.generation!==generation||e.track.kind!=='video')return;
-  p.stream=e.streams?.[0]||new MediaStream([e.track]);
-  p.hasVideoFrame=false;
+  p.stream=new MediaStream([e.track]);
+  p.hasVideoFrame=true;
+  
+  p.video.style.display='block';
   p.video.srcObject=p.stream;
-  const reveal=()=>{if(p.pc!==pc||p.generation!==generation)return;p.hasVideoFrame=true;p.img.style.display='none';p.video.style.display='block';wakeVideo(p);render();};
-  e.track.onunmute=()=>wakeVideo(p);
-  p.video.onloadeddata=reveal;p.video.onplaying=reveal;
-  if('requestVideoFrameCallback' in p.video){p.video.requestVideoFrameCallback(()=>reveal());}
+  const keepLive=()=>{if(p.pc!==pc||p.generation!==generation)return;p.video.style.display='block';p.video.play().catch(()=>{});if('requestVideoFrameCallback' in p.video){try{p.video.requestVideoFrameCallback(keepLive);}catch(_){}}};
+  e.track.onunmute=keepLive;
+  p.video.onloadeddata=keepLive;
+  p.video.oncanplay=keepLive;
+  p.video.onplaying=keepLive;
   e.track.onended=()=>{if(p.pc===pc&&online[id])scheduleRestart(id,700);};
-  wakeVideo(p);
+  keepLive();
  };
  pc.onicecandidate=e=>{if(!e.candidate)return;if(p.source)socket.emit('webrtc-ice',{to:p.source,candidate:e.candidate,screenId:id,viewerId});else p.localCandidates.push(e.candidate);};
  pc.onconnectionstatechange=()=>{
@@ -85,13 +87,6 @@ socket.on('screen-status',list=>{
  render();
 });
 
-socket.on('screen-thumbnail',({screenId,data}={})=>{
- const id=String(screenId),p=players[id];if(!p||typeof data!=='string'||!data.startsWith('data:image/'))return;
- // JPEG thumbnails remain as the fallback while the live 1080p60 WebRTC stream connects.
- // Once the live stream has decoded a frame, the <video> element takes over.
- if(!p.hasVideoFrame){p.img.src=data;if(!p.pc)p.img.style.display='block';}
-});
-
 socket.on('watch-started',({screenId,source})=>{const id=String(screenId),p=players[id];if(!p)return;p.source=source;for(const c of p.localCandidates.splice(0))socket.emit('webrtc-ice',{to:source,candidate:c,screenId:id,viewerId:p.viewerId});});
 socket.on('watch-failed',({screenId})=>{const id=String(screenId),p=players[id];if(!p)return;p.source=null;try{p.pc?.close()}catch(_){ }p.pc=null;if(isActive(id))scheduleRestart(id,700);renderPreview();});
 socket.on('source-stopped',({screenId})=>{const id=String(screenId);if(players[id]){online[id]=false;stopViewer(id);render();}});
@@ -115,8 +110,8 @@ function onScreenClick(id,event){if(!online[id])return;const dual=event.ctrlKey&
 function render(){
  for(let i=1;i<=SCREEN_COUNT;i++){
   const p=players[i],active=isActive(String(i));p.card.classList.toggle('selected',active);
-  if(p.pc&&p.stream&&p.hasVideoFrame){p.img.style.display='none';p.video.style.display='block';}
-  else if(!p.pc||!p.hasVideoFrame){p.video.style.display='none';p.img.style.display='block';}
+  
+  p.video.style.display='block';
  }
  renderPreview();
 }
@@ -132,12 +127,13 @@ function renderSinglePreview(id){
  let v=document.getElementById('preview-video');
  if(p.hasVideoFrame&&p.stream){
   if(!v){v=document.createElement('video');v.id='preview-video';v.autoplay=true;v.muted=true;v.playsInline=true;v.style.cssText='position:absolute;inset:0;width:100%;height:100%;object-fit:contain;background:#050505;display:block;';holder.appendChild(v);}
-  if(v.srcObject!==p.stream)v.srcObject=p.stream;v.play().catch(()=>{});
+  if(v.srcObject!==p.stream)v.srcObject=p.stream;
+  const keepPreviewLive=()=>{if(v.srcObject!==p.stream)return;v.play().catch(()=>{});if('requestVideoFrameCallback' in v){try{v.requestVideoFrameCallback(keepPreviewLive);}catch(_){}}};
+  keepPreviewLive();
   selectedText.textContent='選択中';execute.disabled=!online[id];
  }else{
   if(v){v.pause();v.srcObject=null;v.remove();}
-  holder.innerHTML='';
-  const img=document.createElement('img');img.alt=`画面${id}`;img.src=p.img?.src||'';img.style.cssText='width:100%;height:100%;object-fit:contain;background:#050505;display:block;';holder.appendChild(img);
+  holder.innerHTML='<span style="display:grid;place-items:center;width:100%;height:100%;color:#aaa;">ライブ映像に接続中…</span>';
   selectedText.textContent=online[id]?'接続中':'未接続';execute.disabled=true;
  }
 }
@@ -146,7 +142,7 @@ function renderDualPreview(aId,bId){
  preview.style.backgroundImage=dualBgUrl?`url("${dualBgUrl}")`:'';preview.style.backgroundSize='cover';preview.style.backgroundPosition='center';fillDualBox('dual-box-a',aId);fillDualBox('dual-box-b',bId);
  const ready=live(aId)&&live(bId);selectedText.textContent=ready?'選択中':'接続中';execute.disabled=!(ready&&online[aId]&&online[bId]);
 }
-function fillDualBox(boxId,id){const box=document.getElementById(boxId);if(!box)return;const p=players[id];if(!p.hasVideoFrame||!p.stream){box.classList.add('empty');box.innerHTML='';const img=document.createElement('img');img.alt=`画面${id}`;img.src=p.img?.src||'';img.style.cssText='width:100%;height:100%;object-fit:contain;background:#000;';box.appendChild(img);return;}box.classList.remove('empty');let v=box.querySelector('video');if(!v){box.textContent='';v=document.createElement('video');v.autoplay=true;v.muted=true;v.playsInline=true;v.style.cssText='width:100%;height:100%;object-fit:contain;background:#000;';box.appendChild(v);}if(v.srcObject!==p.stream)v.srcObject=p.stream;v.play().catch(()=>{});}
+function fillDualBox(boxId,id){const box=document.getElementById(boxId);if(!box)return;const p=players[id];if(!p.hasVideoFrame||!p.stream){box.classList.add('empty');box.innerHTML='<span style="display:grid;place-items:center;width:100%;height:100%;color:#aaa;">ライブ映像に接続中…</span>';return;}box.classList.remove('empty');let v=box.querySelector('video');if(!v){box.textContent='';v=document.createElement('video');v.autoplay=true;v.muted=true;v.playsInline=true;v.style.cssText='width:100%;height:100%;object-fit:contain;background:#000;';box.appendChild(v);}if(v.srcObject!==p.stream)v.srcObject=p.stream;const keep=()=>{if(v.srcObject!==p.stream)return;v.play().catch(()=>{});if('requestVideoFrameCallback' in v){try{v.requestVideoFrameCallback(keep);}catch(_){}}};keep();}
 
 execute.onclick=()=>{if(seqA&&!seqB&&online[seqA])socket.emit('execute-layout',{mode:'single',screenId:seqA});else if(seqA&&seqB&&online[seqA]&&online[seqB])socket.emit('execute-layout',{mode:'dual',left:seqA,right:seqB});else return;execute.textContent='投映済み';setTimeout(()=>execute.textContent='投映',1000);};
 function executeProjection(){if(!execute.disabled)execute.click();}

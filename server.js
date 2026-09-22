@@ -99,12 +99,7 @@ io.on('connection',socket=>{
     if(!to||!viewerId||!screenId)return;
     io.to(to).emit('viewer-quality',{viewerId:String(viewerId),screenId:String(screenId),quality:quality==='high'?'high':'low'});
   });
-  socket.on('screen-thumbnail',({screenId,data}={})=>{
-    const id=String(screenId||'');
-    if(!/^[1-8]$/.test(id)||screens.get(id)!==socket.id||typeof data!=='string')return;
-    if(data.length>180000)return;
-    for(const controller of controllerClients)if(controller!==socket.id)io.to(controller).emit('screen-thumbnail',{screenId:id,data});
-  });
+
 
   socket.on('clear-layout',()=>{
     // Clear the active OBS layout. Keep the controller's local selection/Preview untouched.

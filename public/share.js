@@ -1,25 +1,10 @@
 const socket=io();
 const id=new URLSearchParams(location.search).get('id');
 const start=document.getElementById('start'),stop=document.getElementById('stop'),status=document.getElementById('status'),localVideo=document.getElementById('local'),number=document.getElementById('number');
-const peers=new Map(),pending=new Map();let stream=null,thumbTimer=null,thumbCanvas=null;
+const peers=new Map(),pending=new Map();let stream=null;
 const rtcConfig={iceServers:[{urls:'stun:stun.l.google.com:19302'}],iceCandidatePoolSize:0,bundlePolicy:'max-bundle',rtcpMuxPolicy:'require'};
 const valid=/^[1-8]$/.test(id||'');const name=valid?`画面共有${id}`:'画面共有';document.title=name;number.textContent=name;
 if(!valid)start.disabled=true;
-
-function startThumbnailLoop(){
- if(thumbTimer||!stream)return;
- thumbCanvas=document.createElement('canvas');thumbCanvas.width=640;thumbCanvas.height=360;
- const ctx=thumbCanvas.getContext('2d',{alpha:false,desynchronized:true});
- thumbTimer=setInterval(()=>{
-  if(!stream||localVideo.readyState<2)return;
-  try{
-   ctx.drawImage(localVideo,0,0,640,360);
-   const data=thumbCanvas.toDataURL('image/jpeg',0.72);
-   socket.emit('screen-thumbnail',{screenId:id,data});
-  }catch(_){ }
- },200);
-}
-function stopThumbnailLoop(){if(thumbTimer){clearInterval(thumbTimer);thumbTimer=null;}thumbCanvas=null;}
 
 start.onclick=async()=>{
  if(!navigator.mediaDevices||!navigator.mediaDevices.getDisplayMedia){status.textContent=location.protocol!=='https:'?'このページはHTTPSで開いてください。HTTPでは画面共有できません。':'このブラウザでは画面共有に対応していません。';return;}
@@ -36,7 +21,6 @@ start.onclick=async()=>{
   try{await localVideo.play();}catch(_){ }
   stop.disabled=false;status.textContent='画面共有中';
   socket.emit('register-screen',{screenId:id});
-  startThumbnailLoop();
   track.addEventListener('ended',()=>{if(stream)stopSharing();},{once:true});
  }catch(e){
   start.disabled=false;stop.disabled=true;

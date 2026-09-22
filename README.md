@@ -1,64 +1,29 @@
-# Fortnite Observer Switcher V85
+# Fortnite Observer Switcher
 
-8画面対応のOBS用Webスイッチャーです。
+OBS向けの8画面WebRTCスイッチャーです。
 
-## OBS接続URL
+## OBS URL
+`https://obs.terraearth.xyz/obs.html` に統一しています。
 
-**必ず次のURLだけを使用します。**
-
-`https://obs.terraearth.xyz/obs.html`
-
-`/obs-public` は使用しません。
-
-## 画質
-
-実際のWebRTC映像は **1920×1080 / 60FPS / 高画質** を維持します。
-共有トラックに対して低画質・15FPSへ切り替える処理はありません。
-
-サイトが重くならないよう、画面1～8の一覧はWebRTC映像を8本同時デコードせず、共有側から軽量なサムネイル画像を受信します。
-選択した画面だけが実際の1080p60 WebRTC映像になり、PreviewとOBSはその高画質映像を使用します。
+## 映像
+- 実映像はWebRTCのみ。静止画サムネイルには切り替えません。
+- 共有映像: 1920x1080 / 最大60FPS
+- WebRTC送信上限: 12Mbps
+- 投映中のOBS接続は選択中の1～2画面のみ
 
 ## 起動
-
 ```bash
 npm install
 npm start
 ```
 
-## 共有URL
+## 最低動作目安
+- Windows 10/11 64bit
+- Chrome / Edge 最新版
+- CPU: 4コア8スレッド級以上
+- RAM: 8GB以上（8画面を同時表示するコントローラーは16GB推奨）
+- GPU: WebRTCのハードウェア動画デコード対応GPU推奨
+- ネットワーク: 1画面あたり安定した15Mbps以上の上り、コントローラー側は8画面同時なら100Mbps級の受信余裕を推奨
+- OBS側: 1920x1080 Browser Sourceを使用
 
-- `/share.html?id=1`
-- `/share.html?id=2`
-- …
-- `/share.html?id=8`
-
-画面共有はブラウザの仕様上HTTPS環境で使用してください。
-
-## OBS
-
-OBSでブラウザソースを追加し、URLに上記 `/obs.html` を設定します。
-幅1920、高さ1080を推奨します。
-
-## 操作
-
-- 通常クリック / 画面キー: 1画面選択
-- Ctrl + クリック / 画面キー: 2画面目を追加
-- Shift + クリック / 画面キー: 1画面を即時投映
-- Enter: 投映
-- R: 投映解除 + Previewを黒画面
-
-## テスト
-
-```bash
-npm test
-```
-
-構文、HTML参照、OBS URL、低画質WebRTC設定の混入、サムネイル経路、WebRTC停止処理などを自動確認します。
-
-
-### V85
-- Screen-number cards are live WebRTC video, not static snapshots.
-- Preview uses the same live MediaStream as the selected screen.
-- JPEG thumbnails are fallback only while WebRTC connects.
-- WebRTC target remains 1920x1080 / 60 FPS / high quality.
-- OBS URL is https://obs.terraearth.xyz/obs.html.
+8画面すべてを1080p60で同時表示するため、最低スペックはあくまで起動・動作の目安です。安定運用は16GB RAM、6コア12スレッド級CPU、ハードウェアデコード対応GPUを推奨します。
