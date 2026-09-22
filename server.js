@@ -11,6 +11,7 @@ const screens=new Map(); // screenId -> broadcaster socket id
 const SCREEN_COUNT=8;
 const watchers=new Map(Array.from({length:SCREEN_COUNT},(_,i)=>[String(i+1),new Map()])); // screen -> viewer socket -> viewerId
 const obsClients=new Set();
+const controllerClients=new Set();
 let currentLayout=null; // last layout sent to OBS via 投映: {mode:'single',screenId} | {mode:'dual',left,right} - kept so late/reloaded OBS clients can sync immediately
 app.use(express.static(path.join(__dirname,'public'),{etag:false,lastModified:false,setHeaders:r=>r.setHeader('Cache-Control','no-store')}));
 app.get('/api/dual-background',(_,r)=>{
@@ -24,13 +25,20 @@ app.get('/api/dual-background',(_,r)=>{
     r.json({file:match?`/${encodeURIComponent(match)}`:null});
   }catch(_){r.json({file:null});}
 });
-app.get('/',(_,r)=>r.sendFile(path.join(__dirname,'public/index.html')));
-app.get('/share',(_,r)=>r.sendFile(path.join(__dirname,'public/share.html')));
-app.get('/obs',(_,r)=>r.sendFile(path.join(__dirname,'public/obs.html')));
-app.get('/obs-public',(_,r)=>{r.set('Cache-Control','no-store');r.sendFile(path.join(__dirname,'public/obs.html'));});
 function status(){return Array.from({length:SCREEN_COUNT},(_,i)=>i+1).map(id=>({screenId:String(id),connected:screens.has(String(id))}));}
 function broadcastStatus(){io.emit('screen-status',status());}
-function removeViewer(socket,id){watchers.get(id)?.delete(socket.id); socket.data.watchIds?.delete(id);}
+function removeViewer(socket,id){
+  const sid=String(id||'');
+  const map=watchers.get(sid);
+  if(!map)return;
+  const viewerId=map.get(socket.id);
+  if(viewerId!==undefined){
+    const source=screens.get(sid);
+    if(source&&source!==socket.id)io.to(source).emit('viewer-stop',{viewerId:String(viewerId),screenId:sid});
+    map.delete(socket.id);
+  }
+  socket.data.watchIds?.delete(sid);
+}
 function layoutStillValid(l){
   if(!l)return false;
   if(l.mode==='dual')return screens.has(l.left)&&screens.has(l.right);
@@ -42,6 +50,7 @@ io.on('connection',socket=>{
   socket.emit('obs-status',{connected:obsClients.size>0});
 
   socket.on('screen-status-request',()=>socket.emit('screen-status',status()));
+  socket.on('register-controller',()=>{controllerClients.add(socket.id);socket.data.isController=true;});
   socket.on('register-obs',()=>{obsClients.add(socket.id);socket.data.isObs=true;io.emit('obs-status',{connected:true}); socket.emit('screen-status',status());if(currentLayout&&layoutStillValid(currentLayout))socket.emit('layout-update',currentLayout);});
   socket.on('register-screen',({screenId}={})=>{
     const id=String(screenId||''); if(!/^[1-8]$/.test(id))return;
@@ -62,8 +71,13 @@ io.on('connection',socket=>{
   socket.on('watch-screen',({screenId,viewerId}={})=>{
     const id=String(screenId||''); if(!/^[1-8]$/.test(id)||!viewerId)return;
     const source=screens.get(id); if(!source){socket.emit('watch-failed',{screenId:id,reason:'SCREEN_OFFLINE'});return;}
-    // One viewer connection per viewer socket and screen. Re-watch replaces only that viewer's old connection.
-    watchers.get(id).set(socket.id,String(viewerId));
+    // Re-watching must close the old peer on the broadcaster before replacing the watcher entry.
+    const map=watchers.get(id);
+    const oldViewerId=map.get(socket.id);
+    if(oldViewerId!==undefined && String(oldViewerId)!==String(viewerId)){
+      io.to(source).emit('viewer-stop',{viewerId:String(oldViewerId),screenId:id});
+    }
+    map.set(socket.id,String(viewerId));
     socket.data.watchIds??=new Set(); socket.data.watchIds.add(id);
     socket.emit('watch-started',{screenId:id,source});
     io.to(source).emit('viewer-request',{viewerId:String(viewerId),viewerSocket:socket.id,screenId:id});
@@ -81,6 +95,16 @@ io.on('connection',socket=>{
     forward(to,'webrtc-ice',{from:socket.id,candidate,screenId:String(screenId),viewerId:String(viewerId||'')});
   });
   socket.on('viewer-stop',({to,viewerId,screenId}={})=>forward(to,'viewer-stop',{viewerId,screenId}));
+  socket.on('set-viewer-quality',({to,viewerId,screenId,quality}={})=>{
+    if(!to||!viewerId||!screenId)return;
+    io.to(to).emit('viewer-quality',{viewerId:String(viewerId),screenId:String(screenId),quality:quality==='high'?'high':'low'});
+  });
+  socket.on('screen-thumbnail',({screenId,data}={})=>{
+    const id=String(screenId||'');
+    if(!/^[1-8]$/.test(id)||screens.get(id)!==socket.id||typeof data!=='string')return;
+    if(data.length>180000)return;
+    for(const controller of controllerClients)if(controller!==socket.id)io.to(controller).emit('screen-thumbnail',{screenId:id,data});
+  });
 
   socket.on('clear-layout',()=>{
     // Clear the active OBS layout. Keep the controller's local selection/Preview untouched.
@@ -110,6 +134,7 @@ io.on('connection',socket=>{
       for(const viewer of watchers.get(id)?.keys()||[])io.to(viewer).emit('source-stopped',{screenId:id});
       watchers.get(id)?.clear();broadcastStatus();
     }
+    controllerClients.delete(socket.id);
     if(obsClients.delete(socket.id))io.emit('obs-status',{connected:obsClients.size>0});
   });
 });

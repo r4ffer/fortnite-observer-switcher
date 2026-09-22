@@ -1,23 +1,56 @@
-# Fortnite Observer Switcher V80
+# Fortnite Observer Switcher V83
 
-WebRTCベースのFortnite観戦用スイッチャーです。
+8画面対応のOBS用Webスイッチャーです。
 
-## V80の修正
-- Controllerの画面番号サムネイルとPreviewで、WebRTCが渡した元のMediaStreamを直接使用するよう修正
-- `ontrack` 後に新しいMediaStreamを作り直す方式を廃止
-- Chromiumで「OBSには映るがControllerのサムネイル/Previewだけ黒い」ケースを修正
-- OBSは投映中の画面だけWebRTC接続
-- OBS URL: `/obs-public`
+## OBS接続URL
+
+**必ず次のURLだけを使用します。**
+
+`https://obs.terraearth.xyz/obs.html`
+
+`/obs-public` は使用しません。
+
+## 画質
+
+実際のWebRTC映像は **1920×1080 / 60FPS / 高画質** を維持します。
+共有トラックに対して低画質・15FPSへ切り替える処理はありません。
+
+サイトが重くならないよう、画面1～8の一覧はWebRTC映像を8本同時デコードせず、共有側から軽量なサムネイル画像を受信します。
+選択した画面だけが実際の1080p60 WebRTC映像になり、PreviewとOBSはその高画質映像を使用します。
 
 ## 起動
+
 ```bash
 npm install
 npm start
 ```
 
-## OBS
-Browser Source URL:
-`https://obs.terraearth.xyz/obs-public`
+## 共有URL
 
-## GitHub
-このZIPの中身をリポジトリ直下へ配置してください。
+- `/share.html?id=1`
+- `/share.html?id=2`
+- …
+- `/share.html?id=8`
+
+画面共有はブラウザの仕様上HTTPS環境で使用してください。
+
+## OBS
+
+OBSでブラウザソースを追加し、URLに上記 `/obs.html` を設定します。
+幅1920、高さ1080を推奨します。
+
+## 操作
+
+- 通常クリック / 画面キー: 1画面選択
+- Ctrl + クリック / 画面キー: 2画面目を追加
+- Shift + クリック / 画面キー: 1画面を即時投映
+- Enter: 投映
+- R: 投映解除 + Previewを黒画面
+
+## テスト
+
+```bash
+npm test
+```
+
+構文、HTML参照、OBS URL、低画質WebRTC設定の混入、サムネイル経路、WebRTC停止処理などを自動確認します。
