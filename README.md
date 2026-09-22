@@ -1,4 +1,4 @@
-# Fortnite Observer Switcher V83
+# Fortnite Observer Switcher V84
 
 8画面対応のOBS用Webスイッチャーです。
 

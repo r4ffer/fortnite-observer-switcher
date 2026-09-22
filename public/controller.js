@@ -20,7 +20,7 @@ for(let i=1;i<=SCREEN_COUNT;i++){
  const card=document.createElement('div');card.className='screen-card';
  card.innerHTML=`<div class="thumb"><img id="thumb-${i}" alt="画面${i}"/><video id="video-${i}" autoplay muted playsinline></video><div id="offline-${i}" class="offline-card">未接続</div></div><div class="card-name">画面${i}</div>`;
  screensEl.appendChild(card);
- players[i]={id:String(i),card,img:card.querySelector('img'),video:card.querySelector('video'),pc:null,viewerId:null,source:null,remoteCandidates:[],localCandidates:[],stream:null,retryTimer:null,disconnectTimer:null,generation:0};
+ players[i]={id:String(i),card,img:card.querySelector('img'),video:card.querySelector('video'),pc:null,viewerId:null,source:null,remoteCandidates:[],localCandidates:[],stream:null,hasVideoFrame:false,retryTimer:null,disconnectTimer:null,generation:0};
  card.onclick=e=>onScreenClick(String(i),e);
 }
 
@@ -31,7 +31,7 @@ function stopViewer(id){
  if(p.disconnectTimer){clearTimeout(p.disconnectTimer);p.disconnectTimer=null;}
  if(p.viewerId)socket.emit('stop-watching',{screenId:id});
  p.generation++;try{p.pc?.close()}catch(_){ }
- p.pc=null;p.viewerId=null;p.source=null;p.remoteCandidates=[];p.localCandidates=[];p.stream=null;
+ p.pc=null;p.viewerId=null;p.source=null;p.remoteCandidates=[];p.localCandidates=[];p.stream=null;p.hasVideoFrame=false;
  if(p.video){p.video.pause();p.video.srcObject=null;p.video.style.display='none';}
  if(!isActive(id))p.img.style.display='block';
 }
@@ -44,13 +44,20 @@ function startViewer(id){
  const generation=++p.generation;
  const viewerId=`controller-${socket.id}-${id}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
  const pc=new RTCPeerConnection(rtcConfig);
- p.pc=pc;p.viewerId=viewerId;p.source=null;p.remoteCandidates=[];p.localCandidates=[];p.stream=null;
- p.img.style.display='none';p.video.style.display='block';p.video.srcObject=null;
+ p.pc=pc;p.viewerId=viewerId;p.source=null;p.remoteCandidates=[];p.localCandidates=[];p.stream=null;p.hasVideoFrame=false;
+ p.img.style.display='block';p.video.style.display='none';p.video.srcObject=null;
  pc.addTransceiver('video',{direction:'recvonly'});
  pc.ontrack=e=>{
   if(p.pc!==pc||p.generation!==generation||e.track.kind!=='video')return;
   p.stream=e.streams?.[0]||new MediaStream([e.track]);
-  p.video.srcObject=p.stream;e.track.onunmute=()=>wakeVideo(p);e.track.onended=()=>{if(p.pc===pc&&online[id]&&isActive(id))scheduleRestart(id,700);};wakeVideo(p);
+  p.hasVideoFrame=false;
+  p.video.srcObject=p.stream;
+  const reveal=()=>{if(p.pc!==pc||p.generation!==generation)return;p.hasVideoFrame=true;p.img.style.display='none';p.video.style.display='block';wakeVideo(p);renderPreview();};
+  e.track.onunmute=()=>wakeVideo(p);
+  p.video.onloadeddata=reveal;p.video.onplaying=reveal;
+  if('requestVideoFrameCallback' in p.video){p.video.requestVideoFrameCallback(()=>reveal());}
+  e.track.onended=()=>{if(p.pc===pc&&online[id]&&isActive(id))scheduleRestart(id,700);};
+  wakeVideo(p);
  };
  pc.onicecandidate=e=>{if(!e.candidate)return;if(p.source)socket.emit('webrtc-ice',{to:p.source,candidate:e.candidate,screenId:id,viewerId});else p.localCandidates.push(e.candidate);};
  pc.onconnectionstatechange=()=>{
@@ -108,8 +115,8 @@ function onScreenClick(id,event){if(!online[id])return;const dual=event.ctrlKey&
 function render(){
  for(let i=1;i<=SCREEN_COUNT;i++){
   const p=players[i],active=isActive(String(i));p.card.classList.toggle('selected',active);
-  if(active&&p.pc){p.img.style.display='none';p.video.style.display='block';}
-  else if(!active){p.video.style.display='none';p.img.style.display='block';}
+  if(active&&p.pc&&p.hasVideoFrame){p.img.style.display='none';p.video.style.display='block';}
+  else if(!active||!p.hasVideoFrame){p.video.style.display='none';p.img.style.display='block';}
  }
  renderPreview();
 }
@@ -121,16 +128,25 @@ function live(id){return !!players[id]?.stream?.getVideoTracks().some(t=>t.ready
 function renderSinglePreview(id){
  preview.classList.remove('dual');preview.style.backgroundImage='';let holder=document.getElementById('preview-layer');
  if(!holder){preview.innerHTML='';holder=document.createElement('div');holder.id='preview-layer';holder.style.cssText='position:relative;width:100%;height:100%;overflow:hidden;background:#050505;';preview.appendChild(holder);}
- const p=players[id];if(!live(id)){selectedText.textContent='接続中';execute.disabled=true;return;}
- let v=document.getElementById('preview-video');if(!v){v=document.createElement('video');v.id='preview-video';v.autoplay=true;v.muted=true;v.playsInline=true;v.style.cssText='position:absolute;inset:0;width:100%;height:100%;object-fit:contain;background:#050505;display:block;';holder.appendChild(v);}
- if(v.srcObject!==p.stream)v.srcObject=p.stream;v.play().catch(()=>{});selectedText.textContent='選択中';execute.disabled=!online[id];
+ const p=players[id];
+ let v=document.getElementById('preview-video');
+ if(p.hasVideoFrame&&p.stream){
+  if(!v){v=document.createElement('video');v.id='preview-video';v.autoplay=true;v.muted=true;v.playsInline=true;v.style.cssText='position:absolute;inset:0;width:100%;height:100%;object-fit:contain;background:#050505;display:block;';holder.appendChild(v);}
+  if(v.srcObject!==p.stream)v.srcObject=p.stream;v.play().catch(()=>{});
+  selectedText.textContent='選択中';execute.disabled=!online[id];
+ }else{
+  if(v){v.pause();v.srcObject=null;v.remove();}
+  holder.innerHTML='';
+  const img=document.createElement('img');img.alt=`画面${id}`;img.src=p.img?.src||'';img.style.cssText='width:100%;height:100%;object-fit:contain;background:#050505;display:block;';holder.appendChild(img);
+  selectedText.textContent=online[id]?'接続中':'未接続';execute.disabled=true;
+ }
 }
 function renderDualPreview(aId,bId){
  if(!preview.classList.contains('dual')){preview.classList.add('dual');preview.innerHTML='';const a=document.createElement('div');a.className='dual-box';a.id='dual-box-a';const b=document.createElement('div');b.className='dual-box';b.id='dual-box-b';preview.append(a,b);}
  preview.style.backgroundImage=dualBgUrl?`url("${dualBgUrl}")`:'';preview.style.backgroundSize='cover';preview.style.backgroundPosition='center';fillDualBox('dual-box-a',aId);fillDualBox('dual-box-b',bId);
  const ready=live(aId)&&live(bId);selectedText.textContent=ready?'選択中':'接続中';execute.disabled=!(ready&&online[aId]&&online[bId]);
 }
-function fillDualBox(boxId,id){const box=document.getElementById(boxId);if(!box)return;const p=players[id];if(!live(id)){box.classList.add('empty');box.textContent='接続中...';return;}box.classList.remove('empty');let v=box.querySelector('video');if(!v){box.textContent='';v=document.createElement('video');v.autoplay=true;v.muted=true;v.playsInline=true;v.style.cssText='width:100%;height:100%;object-fit:contain;background:#000;';box.appendChild(v);}if(v.srcObject!==p.stream)v.srcObject=p.stream;v.play().catch(()=>{});}
+function fillDualBox(boxId,id){const box=document.getElementById(boxId);if(!box)return;const p=players[id];if(!p.hasVideoFrame||!p.stream){box.classList.add('empty');box.innerHTML='';const img=document.createElement('img');img.alt=`画面${id}`;img.src=p.img?.src||'';img.style.cssText='width:100%;height:100%;object-fit:contain;background:#000;';box.appendChild(img);return;}box.classList.remove('empty');let v=box.querySelector('video');if(!v){box.textContent='';v=document.createElement('video');v.autoplay=true;v.muted=true;v.playsInline=true;v.style.cssText='width:100%;height:100%;object-fit:contain;background:#000;';box.appendChild(v);}if(v.srcObject!==p.stream)v.srcObject=p.stream;v.play().catch(()=>{});}
 
 execute.onclick=()=>{if(seqA&&!seqB&&online[seqA])socket.emit('execute-layout',{mode:'single',screenId:seqA});else if(seqA&&seqB&&online[seqA]&&online[seqB])socket.emit('execute-layout',{mode:'dual',left:seqA,right:seqB});else return;execute.textContent='投映済み';setTimeout(()=>execute.textContent='投映',1000);};
 function executeProjection(){if(!execute.disabled)execute.click();}
