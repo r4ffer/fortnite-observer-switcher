@@ -1,4 +1,4 @@
-# Fortnite Observer Switcher V84
+# Fortnite Observer Switcher V85
 
 8画面対応のOBS用Webスイッチャーです。
 
@@ -54,3 +54,11 @@ npm test
 ```
 
 構文、HTML参照、OBS URL、低画質WebRTC設定の混入、サムネイル経路、WebRTC停止処理などを自動確認します。
+
+
+### V85
+- Screen-number cards are live WebRTC video, not static snapshots.
+- Preview uses the same live MediaStream as the selected screen.
+- JPEG thumbnails are fallback only while WebRTC connects.
+- WebRTC target remains 1920x1080 / 60 FPS / high quality.
+- OBS URL is https://obs.terraearth.xyz/obs.html.

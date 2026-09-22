@@ -36,27 +36,27 @@ function stopViewer(id){
  if(!isActive(id))p.img.style.display='block';
 }
 function scheduleRestart(id,delay=500){
- const p=players[id];if(!p||!online[id]||!isActive(id)||p.retryTimer)return;
- p.retryTimer=setTimeout(()=>{p.retryTimer=null;if(online[id]&&isActive(id)&&!p.pc)startViewer(id);},delay);
+ const p=players[id];if(!p||!online[id]||p.retryTimer)return;
+ p.retryTimer=setTimeout(()=>{p.retryTimer=null;if(online[id]&&!p.pc)startViewer(id);},delay);
 }
 function startViewer(id){
- const p=players[id];if(!p||!online[id]||!isActive(id)||p.pc)return;
+ const p=players[id];if(!p||!online[id]||p.pc)return;
  const generation=++p.generation;
  const viewerId=`controller-${socket.id}-${id}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
  const pc=new RTCPeerConnection(rtcConfig);
  p.pc=pc;p.viewerId=viewerId;p.source=null;p.remoteCandidates=[];p.localCandidates=[];p.stream=null;p.hasVideoFrame=false;
- p.img.style.display='block';p.video.style.display='none';p.video.srcObject=null;
+ p.img.style.display='none';p.video.style.display='block';p.video.srcObject=null;
  pc.addTransceiver('video',{direction:'recvonly'});
  pc.ontrack=e=>{
   if(p.pc!==pc||p.generation!==generation||e.track.kind!=='video')return;
   p.stream=e.streams?.[0]||new MediaStream([e.track]);
   p.hasVideoFrame=false;
   p.video.srcObject=p.stream;
-  const reveal=()=>{if(p.pc!==pc||p.generation!==generation)return;p.hasVideoFrame=true;p.img.style.display='none';p.video.style.display='block';wakeVideo(p);renderPreview();};
+  const reveal=()=>{if(p.pc!==pc||p.generation!==generation)return;p.hasVideoFrame=true;p.img.style.display='none';p.video.style.display='block';wakeVideo(p);render();};
   e.track.onunmute=()=>wakeVideo(p);
   p.video.onloadeddata=reveal;p.video.onplaying=reveal;
   if('requestVideoFrameCallback' in p.video){p.video.requestVideoFrameCallback(()=>reveal());}
-  e.track.onended=()=>{if(p.pc===pc&&online[id]&&isActive(id))scheduleRestart(id,700);};
+  e.track.onended=()=>{if(p.pc===pc&&online[id])scheduleRestart(id,700);};
   wakeVideo(p);
  };
  pc.onicecandidate=e=>{if(!e.candidate)return;if(p.source)socket.emit('webrtc-ice',{to:p.source,candidate:e.candidate,screenId:id,viewerId});else p.localCandidates.push(e.candidate);};
@@ -76,20 +76,20 @@ function startViewer(id){
 }
 function wakeVideo(p){if(!p.video)return;if(p.stream&&p.video.srcObject!==p.stream)p.video.srcObject=p.stream;p.video.play().catch(()=>{});if(isActive(p.id))renderPreview();}
 
-socket.on('connect',()=>{socket.emit('register-controller');for(let i=1;i<=SCREEN_COUNT;i++)stopViewer(String(i));socket.emit('screen-status-request');});
+socket.on('connect',()=>{socket.emit('register-controller');socket.emit('screen-status-request');});
 socket.on('obs-status',({connected})=>{obsStatus.className=`obs-status ${connected?'online':'offline'}`;obsStatus.querySelector('.status-text').textContent=connected?'ONLINE':'OFFLINE';});
 socket.on('screen-status',list=>{
  const seen=new Set();
- for(const s of list){const id=String(s.screenId);if(!players[id])continue;seen.add(id);online[id]=!!s.connected;document.getElementById(`offline-${id}`).style.display=s.connected?'none':'grid';if(!s.connected)stopViewer(id);else if(isActive(id)&&!players[id].pc)startViewer(id);}
+ for(const s of list){const id=String(s.screenId);if(!players[id])continue;seen.add(id);online[id]=!!s.connected;document.getElementById(`offline-${id}`).style.display=s.connected?'none':'grid';if(!s.connected)stopViewer(id);else if(!players[id].pc)startViewer(id);}
  for(let i=1;i<=SCREEN_COUNT;i++)if(!seen.has(String(i))){online[i]=false;stopViewer(String(i));}
  render();
 });
 
 socket.on('screen-thumbnail',({screenId,data}={})=>{
  const id=String(screenId),p=players[id];if(!p||typeof data!=='string'||!data.startsWith('data:image/'))return;
- // Thumbnails are snapshots only. They are deliberately not WebRTC streams, so the real 1080p60
- // media connection is reserved for Preview and OBS and cannot be degraded by thumbnail decoding.
- if(!isActive(id)){p.img.src=data;p.img.style.display='block';}
+ // JPEG thumbnails remain as the fallback while the live 1080p60 WebRTC stream connects.
+ // Once the live stream has decoded a frame, the <video> element takes over.
+ if(!p.hasVideoFrame){p.img.src=data;if(!p.pc)p.img.style.display='block';}
 });
 
 socket.on('watch-started',({screenId,source})=>{const id=String(screenId),p=players[id];if(!p)return;p.source=source;for(const c of p.localCandidates.splice(0))socket.emit('webrtc-ice',{to:source,candidate:c,screenId:id,viewerId:p.viewerId});});
@@ -106,7 +106,7 @@ function selectScreen(id,{dual=false,instant=false}={}){
  if(!online[id])return;previewCleared=false;
  if(dual){if(seqA===null){seqA=id;seqB=null;}else if(seqA!==id){seqB=id;}}
  else{if(seqB===id)seqB=null;seqA=id;}
- for(let i=1;i<=SCREEN_COUNT;i++){const sid=String(i);if(isActive(sid)){if(!players[sid].pc)startViewer(sid);}else stopViewer(sid);}
+ for(let i=1;i<=SCREEN_COUNT;i++){const sid=String(i);if(online[sid]&&!players[sid].pc)startViewer(sid);}
  render();
  if(instant)socket.emit('execute-layout',{mode:'single',screenId:id});
 }
@@ -115,8 +115,8 @@ function onScreenClick(id,event){if(!online[id])return;const dual=event.ctrlKey&
 function render(){
  for(let i=1;i<=SCREEN_COUNT;i++){
   const p=players[i],active=isActive(String(i));p.card.classList.toggle('selected',active);
-  if(active&&p.pc&&p.hasVideoFrame){p.img.style.display='none';p.video.style.display='block';}
-  else if(!active||!p.hasVideoFrame){p.video.style.display='none';p.img.style.display='block';}
+  if(p.pc&&p.stream&&p.hasVideoFrame){p.img.style.display='none';p.video.style.display='block';}
+  else if(!p.pc||!p.hasVideoFrame){p.video.style.display='none';p.img.style.display='block';}
  }
  renderPreview();
 }
